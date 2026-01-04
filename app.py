@@ -1,7 +1,6 @@
 """
 ================================================================================
 EMPLOYEE PRODUCTIVITY PREDICTION APP
-Streamlit Application for Course Project
 ================================================================================
 """
 
@@ -10,7 +9,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import joblib
-import os
 
 # =============================================================================
 # PAGE CONFIG
@@ -22,16 +20,25 @@ st.set_page_config(
 )
 
 # =============================================================================
-# LOAD MODEL FILES (SAFE)
+# LOAD MODEL FILES (FIXED)
 # =============================================================================
 @st.cache_resource
 def load_model_files():
     try:
         model = joblib.load("final_model.pkl")
         scaler = joblib.load("scaler.pkl")
-        feature_names = joblib.load("feature_names.pkl")
         metadata = joblib.load("model_metadata.pkl")
+
+        # Get feature names safely
+        if metadata and "features" in metadata:
+            feature_names = metadata["features"]
+        elif hasattr(scaler, "feature_names_in_"):
+            feature_names = list(scaler.feature_names_in_)
+        else:
+            feature_names = None
+
         return model, scaler, feature_names, metadata
+
     except Exception as e:
         st.error("❌ Model files could not be loaded")
         st.exception(e)
@@ -76,7 +83,11 @@ if page == "🏠 Home":
     col1, col2, col3 = st.columns(3)
     col1.metric("Employees", len(df))
     col2.metric("Features", len(feature_names) if feature_names else "N/A")
-    col3.metric("Avg Productivity", round(df.select_dtypes(np.number).iloc[:, -1].mean(), 2))
+
+    if "productivity_score" in df.columns:
+        col3.metric("Avg Productivity", round(df["productivity_score"].mean(), 2))
+    else:
+        col3.metric("Avg Target", "N/A")
 
     st.subheader("📋 Dataset Preview")
     st.dataframe(df.head(), use_container_width=True)
@@ -90,23 +101,19 @@ elif page == "📈 Data Explorer":
     numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
 
     if numeric_cols:
-        col = st.selectbox("Select Feature", numeric_cols)
+        selected_col = st.selectbox("Select Feature", numeric_cols)
 
         col1, col2 = st.columns(2)
         with col1:
-            fig = px.histogram(df, x=col, nbins=30)
-            st.plotly_chart(fig, use_container_width=True)
-
+            st.plotly_chart(px.histogram(df, x=selected_col), use_container_width=True)
         with col2:
-            fig = px.box(df, y=col)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(px.box(df, y=selected_col), use_container_width=True)
 
         st.subheader("📊 Scatter Plot")
         x_axis = st.selectbox("X Axis", numeric_cols)
         y_axis = st.selectbox("Y Axis", numeric_cols, index=1)
 
-        fig = px.scatter(df, x=x_axis, y=y_axis)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(px.scatter(df, x=x_axis, y=y_axis), use_container_width=True)
 
 # =============================================================================
 # PREDICTION
@@ -114,8 +121,8 @@ elif page == "📈 Data Explorer":
 elif page == "🎯 Make Prediction":
     st.title("🎯 Predict Productivity")
 
-    if model is None:
-        st.error("Model not loaded.")
+    if model is None or scaler is None or feature_names is None:
+        st.error("⚠️ Model not ready. Check model files.")
     else:
         input_data = {}
 
@@ -130,15 +137,16 @@ elif page == "🎯 Make Prediction":
             else:
                 input_data[feature] = st.number_input(feature, value=0.0)
 
-        if st.button("🚀 Predict"):
+        if st.button("🚀 Predict Productivity"):
             try:
                 input_df = pd.DataFrame([input_data])
                 input_scaled = scaler.transform(input_df)
                 prediction = model.predict(input_scaled)[0]
 
                 st.success(f"✅ Predicted Productivity Score: **{prediction:.2f}**")
+
             except Exception as e:
-                st.error("Prediction failed")
+                st.error("❌ Prediction failed")
                 st.exception(e)
 
 # =============================================================================
