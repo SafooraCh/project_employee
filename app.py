@@ -1,5 +1,5 @@
 # ==============================================================================
-# SIMPLE STREAMLIT APP FOR EMPLOYEE PRODUCTIVITY - KAGGLE VERSION
+# STREAMLIT APP - KAGGLE READY FOR EMPLOYEE PRODUCTIVITY
 # ==============================================================================
 
 import streamlit as st
@@ -28,11 +28,12 @@ st.markdown("---")
 @st.cache_data
 def load_data():
     """Load the dataset from Kaggle input folder"""
+    dataset_path = '/kaggle/input/employee-productivity/employee_productivity.csv'
     try:
-        df = pd.read_csv('/kaggle/input/employee-productivity/employee_productivity.csv')
+        df = pd.read_csv(dataset_path)
         return df
-    except:
-        st.error("❌ Dataset not found! Make sure it's uploaded to Kaggle input.")
+    except FileNotFoundError:
+        st.error(f"❌ Dataset not found at path: {dataset_path}")
         return None
 
 # ==============================================================================
@@ -49,12 +50,12 @@ def load_model():
         with open('/kaggle/working/label_encoders.pkl', 'rb') as f:
             encoders = pickle.load(f)
         return model, scaler, encoders
-    except:
-        st.warning("⚠️ Model not found! Run the Kaggle notebook first to train the model.")
+    except FileNotFoundError:
+        st.warning("⚠️ Model files not found! Run the Kaggle notebook first to train and save the model.")
         return None, None, None
 
 # ==============================================================================
-# SIDEBAR - NAVIGATION
+# SIDEBAR NAVIGATION
 # ==============================================================================
 st.sidebar.header("📱 Navigation")
 page = st.sidebar.radio(
@@ -69,11 +70,11 @@ if page == "🏠 Home":
     st.header("Welcome! 👋")
     st.markdown("""
     ### What can you do here?
-    - 📊 **Explore Data**: See statistics and information about the dataset
-    - 🤖 **Make Predictions**: Use AI to predict employee productivity
-    - 📈 **View Charts**: See visualizations of the data
+    - 📊 **Explore Data**: View statistics and information about the dataset
+    - 🤖 **Make Predictions**: Predict employee productivity
+    - 📈 **Visualize Data**: View charts and correlations
     """)
-    
+
     df = load_data()
     if df is not None:
         st.markdown("---")
@@ -101,7 +102,7 @@ elif page == "📊 Data Explorer":
         with tab1:
             st.subheader("Statistical Summary")
             st.dataframe(df.describe(), use_container_width=True)
-            
+
             st.subheader("Missing Values")
             missing = df.isnull().sum()
             if missing.sum() > 0:
@@ -110,7 +111,7 @@ elif page == "📊 Data Explorer":
                 st.dataframe(missing_df, use_container_width=True)
             else:
                 st.success("✅ No missing values!")
-        
+
         with tab2:
             st.subheader("Analyze Each Column")
             column = st.selectbox("Choose a column:", df.columns)
@@ -143,9 +144,10 @@ elif page == "🤖 Make Prediction":
     df = load_data()
     if model is not None and df is not None:
         st.markdown("### Enter values to predict:")
+
         numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
         numerical_cols = numerical_cols[:-1]  # Remove target
-        
+
         input_data = {}
         col1, col2 = st.columns(2)
         for idx, col in enumerate(numerical_cols):
@@ -155,11 +157,10 @@ elif page == "🤖 Make Prediction":
                     value=float(df[col].mean()),
                     help=f"Range: {df[col].min():.2f} to {df[col].max():.2f}"
                 )
-        
+
         if st.button("🎯 Predict Now!", type="primary"):
             input_df = pd.DataFrame([input_data])
             try:
-                # No need to scale if already scaled during training; adjust if needed
                 prediction = model.predict(input_df)
                 st.success("✅ Prediction Complete!")
                 st.markdown(f"## **Predicted Value: {prediction[0]:.2f}**")
@@ -180,29 +181,29 @@ elif page == "📈 Visualizations":
             ["📊 Histogram", "📈 Line Chart", "🎯 Scatter Plot", "📦 Box Plot", "🔥 Heatmap"]
         )
         numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-        
+
         if viz_type == "📊 Histogram":
             column = st.selectbox("Select column:", numerical_cols)
             fig = px.histogram(df, x=column, title=f'Distribution of {column}')
             st.plotly_chart(fig, use_container_width=True)
-        
+
         elif viz_type == "📈 Line Chart":
             column = st.selectbox("Select column:", numerical_cols)
             fig = px.line(df, y=column, title=f'Line Chart of {column}')
             st.plotly_chart(fig, use_container_width=True)
-        
+
         elif viz_type == "🎯 Scatter Plot":
             col1, col2 = st.columns(2)
             with col1: x_col = st.selectbox("X-axis:", numerical_cols)
             with col2: y_col = st.selectbox("Y-axis:", numerical_cols)
             fig = px.scatter(df, x=x_col, y=y_col, title=f'{x_col} vs {y_col}')
             st.plotly_chart(fig, use_container_width=True)
-        
+
         elif viz_type == "📦 Box Plot":
             column = st.selectbox("Select column:", numerical_cols)
             fig = px.box(df, y=column, title=f'Box Plot of {column}')
             st.plotly_chart(fig, use_container_width=True)
-        
+
         elif viz_type == "🔥 Heatmap":
             corr = df[numerical_cols].corr()
             fig = px.imshow(corr, text_auto=True, title='Correlation Heatmap', color_continuous_scale='RdBu_r')
