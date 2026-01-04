@@ -1,25 +1,22 @@
 # ==============================================================================
-# STREAMLIT APP - KAGGLE READY FOR EMPLOYEE PRODUCTIVITY
+# EMPLOYEE PRODUCTIVITY STREAMLIT APP - FULL VERSION FOR KAGGLE
 # ==============================================================================
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import pickle
 import plotly.express as px
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # ==============================================================================
 # PAGE SETUP
 # ==============================================================================
-st.set_page_config(
-    page_title="Employee Productivity App",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="Employee Productivity App",
+                   page_icon="📊", layout="wide")
 
-# ==============================================================================
-# TITLE
-# ==============================================================================
-st.title("📊 Employee Productivity Analysis")
+st.title("📊 Employee Productivity Analysis - Full Version")
 st.markdown("---")
 
 # ==============================================================================
@@ -27,13 +24,12 @@ st.markdown("---")
 # ==============================================================================
 @st.cache_data
 def load_data():
-    """Load the dataset from Kaggle input folder"""
-    dataset_path = '/kaggle/input/employee-productivity/employee_productivity.csv'
+    path = "/kaggle/input/employee-productivity/employee_productivity.csv"
     try:
-        df = pd.read_csv(dataset_path)
+        df = pd.read_csv(path)
         return df
     except FileNotFoundError:
-        st.error(f"❌ Dataset not found at path: {dataset_path}")
+        st.error(f"❌ Dataset not found at {path}")
         return None
 
 # ==============================================================================
@@ -41,7 +37,6 @@ def load_data():
 # ==============================================================================
 @st.cache_resource
 def load_model():
-    """Load the trained model, scaler, and encoders from Kaggle working folder"""
     try:
         with open('/kaggle/working/best_model.pkl', 'rb') as f:
             model = pickle.load(f)
@@ -50,171 +45,111 @@ def load_model():
         with open('/kaggle/working/label_encoders.pkl', 'rb') as f:
             encoders = pickle.load(f)
         return model, scaler, encoders
-    except FileNotFoundError:
-        st.warning("⚠️ Model files not found! Run the Kaggle notebook first to train and save the model.")
+    except:
+        st.warning("⚠️ Model not found. Run the notebook first to train and save it.")
         return None, None, None
+
+# ==============================================================================
+# LOAD DATA
+# ==============================================================================
+df = load_data()
+model, scaler, encoders = load_model()  # load model for prediction
 
 # ==============================================================================
 # SIDEBAR NAVIGATION
 # ==============================================================================
-st.sidebar.header("📱 Navigation")
-page = st.sidebar.radio(
-    "Choose a page:",
-    ["🏠 Home", "📊 Data Explorer", "🤖 Make Prediction", "📈 Visualizations"]
-)
+st.sidebar.header("📌 Navigation")
+page = st.sidebar.radio("Select a page:", ["🏠 Home & EDA", "📈 Visualizations", "🤖 Predict"])
 
 # ==============================================================================
-# PAGE 1: HOME
+# PAGE 1: HOME & EDA
 # ==============================================================================
-if page == "🏠 Home":
-    st.header("Welcome! 👋")
-    st.markdown("""
-    ### What can you do here?
-    - 📊 **Explore Data**: View statistics and information about the dataset
-    - 🤖 **Make Predictions**: Predict employee productivity
-    - 📈 **Visualize Data**: View charts and correlations
-    """)
-
-    df = load_data()
+if page == "🏠 Home & EDA":
     if df is not None:
-        st.markdown("---")
-        st.subheader("📋 Quick Dataset Info")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("📊 Total Rows", len(df))
-        with col2:
-            st.metric("📝 Total Columns", len(df.columns))
-        with col3:
-            st.metric("💾 Dataset Size", f"{df.memory_usage().sum() / 1024:.1f} KB")
-        
-        st.markdown("---")
-        st.subheader("👀 Preview of Data")
+        st.header("👋 Home & Exploratory Data Analysis")
+
+        st.subheader("📋 Dataset Preview")
         st.dataframe(df.head(10), use_container_width=True)
 
+        st.subheader("ℹ️ Dataset Info")
+        buffer = []
+        df.info(buf=buffer)
+        info_str = "\n".join(buffer)
+        st.text(info_str)
+
+        st.subheader("📊 Statistical Summary")
+        st.dataframe(df.describe(), use_container_width=True)
+
+        st.subheader("❓ Missing Values")
+        missing = df.isnull().sum()
+        if missing.sum() > 0:
+            missing_df = pd.DataFrame({"Column": missing.index, "Missing": missing.values})
+            missing_df = missing_df[missing_df["Missing"] > 0]
+            st.dataframe(missing_df)
+        else:
+            st.success("✅ No missing values")
+
+        st.subheader("🔢 Column Types")
+        num_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+        st.write(f"Numerical columns: {num_cols}")
+        st.write(f"Categorical columns: {cat_cols}")
+
 # ==============================================================================
-# PAGE 2: DATA EXPLORER
+# PAGE 2: VISUALIZATIONS
 # ==============================================================================
-elif page == "📊 Data Explorer":
-    st.header("Data Explorer 🔍")
-    df = load_data()
+elif page == "📈 Visualizations":
     if df is not None:
-        tab1, tab2 = st.tabs(["📊 Basic Statistics", "🔍 Column Details"])
-        with tab1:
-            st.subheader("Statistical Summary")
-            st.dataframe(df.describe(), use_container_width=True)
+        st.header("📈 Data Visualizations")
 
-            st.subheader("Missing Values")
-            missing = df.isnull().sum()
-            if missing.sum() > 0:
-                missing_df = pd.DataFrame({'Column': missing.index, 'Missing': missing.values})
-                missing_df = missing_df[missing_df['Missing'] > 0]
-                st.dataframe(missing_df, use_container_width=True)
-            else:
-                st.success("✅ No missing values!")
+        num_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        cat_cols = df.select_dtypes(include=['object']).columns.tolist()
 
-        with tab2:
-            st.subheader("Analyze Each Column")
-            column = st.selectbox("Choose a column:", df.columns)
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**Column Information:**")
-                st.write(f"- Data Type: {df[column].dtype}")
-                st.write(f"- Unique Values: {df[column].nunique()}")
-                st.write(f"- Missing Values: {df[column].isnull().sum()}")
-                if df[column].dtype in ['int64', 'float64']:
-                    st.write(f"- Mean: {df[column].mean():.2f}")
-                    st.write(f"- Min: {df[column].min():.2f}")
-                    st.write(f"- Max: {df[column].max():.2f}")
-            with col2:
-                st.write("**Visual:**")
-                if df[column].dtype in ['int64', 'float64']:
-                    fig = px.histogram(df, x=column, title=f'Distribution of {column}')
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    counts = df[column].value_counts().head(10)
-                    fig = px.bar(x=counts.index, y=counts.values, title=f'Top values in {column}')
-                    st.plotly_chart(fig, use_container_width=True)
+        st.subheader("🔢 Numerical Columns - Histogram & Boxplot")
+        for col in num_cols:
+            st.markdown(f"### {col}")
+            fig1 = px.histogram(df, x=col, nbins=30, title=f'Distribution of {col}')
+            st.plotly_chart(fig1, use_container_width=True)
+
+            fig2 = px.box(df, y=col, title=f'Boxplot of {col}')
+            st.plotly_chart(fig2, use_container_width=True)
+
+        st.subheader("📝 Categorical Columns - Bar Charts")
+        for col in cat_cols:
+            st.markdown(f"### {col}")
+            counts = df[col].value_counts().head(10)
+            fig = px.bar(x=counts.index, y=counts.values, title=f'Top values in {col}')
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("🔥 Correlation Heatmap")
+        corr = df[num_cols].corr()
+        fig = px.imshow(corr, text_auto=True, title="Correlation Heatmap", color_continuous_scale='RdBu_r')
+        st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
-# PAGE 3: MAKE PREDICTION
+# PAGE 3: PREDICTION
 # ==============================================================================
-elif page == "🤖 Make Prediction":
-    st.header("Make a Prediction 🎯")
-    model, scaler, encoders = load_model()
-    df = load_data()
-    if model is not None and df is not None:
-        st.markdown("### Enter values to predict:")
+elif page == "🤖 Predict":
+    if df is not None and model is not None:
+        st.header("🎯 Make Predictions")
+        st.markdown("Enter values below to predict employee productivity")
 
-        numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-        numerical_cols = numerical_cols[:-1]  # Remove target
+        num_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        num_cols = num_cols[:-1]  # remove target column
 
         input_data = {}
         col1, col2 = st.columns(2)
-        for idx, col in enumerate(numerical_cols):
-            with col1 if idx % 2 == 0 else col2:
-                input_data[col] = st.number_input(
-                    f"{col}",
-                    value=float(df[col].mean()),
-                    help=f"Range: {df[col].min():.2f} to {df[col].max():.2f}"
-                )
+        for i, col in enumerate(num_cols):
+            with col1 if i % 2 == 0 else col2:
+                input_data[col] = st.number_input(f"{col}", value=float(df[col].mean()),
+                                                  help=f"Min: {df[col].min()}, Max: {df[col].max()}")
 
-        if st.button("🎯 Predict Now!", type="primary"):
+        if st.button("Predict"):
             input_df = pd.DataFrame([input_data])
             try:
-                prediction = model.predict(input_df)
-                st.success("✅ Prediction Complete!")
-                st.markdown(f"## **Predicted Value: {prediction[0]:.2f}**")
+                pred = model.predict(input_df)
+                st.success(f"✅ Prediction: {pred[0]:.2f}")
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
     else:
-        st.warning("⚠️ Please run the Kaggle notebook first to train the model!")
-
-# ==============================================================================
-# PAGE 4: VISUALIZATIONS
-# ==============================================================================
-elif page == "📈 Visualizations":
-    st.header("Data Visualizations 📊")
-    df = load_data()
-    if df is not None:
-        viz_type = st.selectbox(
-            "Select chart type:",
-            ["📊 Histogram", "📈 Line Chart", "🎯 Scatter Plot", "📦 Box Plot", "🔥 Heatmap"]
-        )
-        numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-
-        if viz_type == "📊 Histogram":
-            column = st.selectbox("Select column:", numerical_cols)
-            fig = px.histogram(df, x=column, title=f'Distribution of {column}')
-            st.plotly_chart(fig, use_container_width=True)
-
-        elif viz_type == "📈 Line Chart":
-            column = st.selectbox("Select column:", numerical_cols)
-            fig = px.line(df, y=column, title=f'Line Chart of {column}')
-            st.plotly_chart(fig, use_container_width=True)
-
-        elif viz_type == "🎯 Scatter Plot":
-            col1, col2 = st.columns(2)
-            with col1: x_col = st.selectbox("X-axis:", numerical_cols)
-            with col2: y_col = st.selectbox("Y-axis:", numerical_cols)
-            fig = px.scatter(df, x=x_col, y=y_col, title=f'{x_col} vs {y_col}')
-            st.plotly_chart(fig, use_container_width=True)
-
-        elif viz_type == "📦 Box Plot":
-            column = st.selectbox("Select column:", numerical_cols)
-            fig = px.box(df, y=column, title=f'Box Plot of {column}')
-            st.plotly_chart(fig, use_container_width=True)
-
-        elif viz_type == "🔥 Heatmap":
-            corr = df[numerical_cols].corr()
-            fig = px.imshow(corr, text_auto=True, title='Correlation Heatmap', color_continuous_scale='RdBu_r')
-            st.plotly_chart(fig, use_container_width=True)
-
-# ==============================================================================
-# FOOTER
-# ==============================================================================
-st.markdown("---")
-st.markdown("""
-    <div style='text-align: center; color: gray;'>
-        <p>Employee Productivity Analysis | Course Project 2024</p>
-    </div>
-""", unsafe_allow_html=True)
+        st.warning("⚠️ Model not found. Run the notebook first to train and save the model.")
