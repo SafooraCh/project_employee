@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 # =============================================================================
-# LOAD MODEL FILES (FIXED)
+# LOAD MODEL FILES
 # =============================================================================
 @st.cache_resource
 def load_model_files():
@@ -127,13 +127,18 @@ elif page == "🎯 Make Prediction":
         input_data = {}
 
         for feature in feature_names:
-            if feature in df.columns:
-                input_data[feature] = st.slider(
-                    feature,
-                    float(df[feature].min()),
-                    float(df[feature].max()),
-                    float(df[feature].mean())
-                )
+            if feature in df.columns and pd.api.types.is_numeric_dtype(df[feature]):
+                col_data = df[feature].dropna()
+
+                if not col_data.empty:
+                    input_data[feature] = st.slider(
+                        feature,
+                        float(col_data.min()),
+                        float(col_data.max()),
+                        float(col_data.mean())
+                    )
+                else:
+                    input_data[feature] = st.number_input(feature, value=0.0)
             else:
                 input_data[feature] = st.number_input(feature, value=0.0)
 
