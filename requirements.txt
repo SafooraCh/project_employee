@@ -1,0 +1,17 @@
+# Core libraries
+pandas==2.1.0
+numpy==1.26.0
+
+# Machine Learning
+scikit-learn==1.3.0
+
+# Visualization
+matplotlib==3.8.0
+seaborn==0.12.3
+plotly==6.1.0
+
+# Streamlit
+streamlit==1.26.1
+
+# Others
+pickle5==0.0.12  # optional, if using pickle on older Python
