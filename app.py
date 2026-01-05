@@ -1,6 +1,5 @@
 # =============================================================================
 # EMPLOYEE PRODUCTIVITY PREDICTION APP
-# Streamlit Course Project
 # =============================================================================
 
 import streamlit as st
@@ -20,36 +19,50 @@ st.set_page_config(
 )
 
 # =============================================================================
-# AVAILABLE MODELS (ADD MORE IF YOU HAVE)
+# DETECT AVAILABLE MODELS SAFELY
 # =============================================================================
-MODEL_FILES = {
-    "Linear Regression": "linear_model.pkl",
-    "Random Forest": "rf_model.pkl",
-    "Support Vector Machine": "svm_model.pkl"
-}
+@st.cache_resource
+def get_available_models():
+    models = {}
 
-SCALER_FILE = "scaler.pkl"
-METADATA_FILE = "model_metadata.pkl"
+    if os.path.exists("linear_model.pkl"):
+        models["Linear Regression"] = "linear_model.pkl"
+
+    if os.path.exists("rf_model.pkl"):
+        models["Random Forest"] = "rf_model.pkl"
+
+    if os.path.exists("svm_model.pkl"):
+        models["Support Vector Machine"] = "svm_model.pkl"
+
+    if os.path.exists("final_model.pkl"):
+        models["Final Trained Model"] = "final_model.pkl"
+
+    return models
+
+MODEL_FILES = get_available_models()
 
 # =============================================================================
-# LOAD MODEL SAFELY
+# LOAD MODEL FILES
 # =============================================================================
 @st.cache_resource
 def load_model(model_path):
     try:
         model = joblib.load(model_path)
-        scaler = joblib.load(SCALER_FILE)
-        metadata = joblib.load(METADATA_FILE)
+        scaler = joblib.load("scaler.pkl")
+        metadata = joblib.load("model_metadata.pkl")
 
-        if "features" in metadata:
+        # feature names
+        if metadata and "features" in metadata:
             feature_names = metadata["features"]
+        elif hasattr(scaler, "feature_names_in_"):
+            feature_names = list(scaler.feature_names_in_)
         else:
             feature_names = None
 
         return model, scaler, feature_names, metadata
 
     except Exception as e:
-        st.error("❌ Failed to load model files")
+        st.error("❌ Model files could not be loaded")
         st.exception(e)
         return None, None, None, None
 
@@ -85,13 +98,19 @@ page = st.sidebar.radio(
 
 # MODEL SELECTION
 st.sidebar.markdown("### 🤖 Select ML Model")
+
+if len(MODEL_FILES) == 0:
+    st.sidebar.error("❌ No model files found")
+    st.stop()
+
 selected_model_name = st.sidebar.selectbox(
     "Choose model:",
     list(MODEL_FILES.keys())
 )
 
-model_path = MODEL_FILES[selected_model_name]
-model, scaler, feature_names, metadata = load_model(model_path)
+model, scaler, feature_names, metadata = load_model(
+    MODEL_FILES[selected_model_name]
+)
 
 # =============================================================================
 # HOME
@@ -117,32 +136,36 @@ elif page == "📈 Data Explorer":
     st.title("📈 Data Explorer")
 
     numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-
     feature = st.selectbox("Select Feature", numeric_cols)
 
     col1, col2 = st.columns(2)
     with col1:
-        fig = px.histogram(df, x=feature, nbins=30, title="Histogram")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(
+            px.histogram(df, x=feature, nbins=30),
+            use_container_width=True
+        )
 
     with col2:
-        fig = px.box(df, y=feature, title="Box Plot")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(
+            px.box(df, y=feature),
+            use_container_width=True
+        )
 
     st.subheader("📊 Scatter Plot")
     x_axis = st.selectbox("X Axis", numeric_cols)
     y_axis = st.selectbox("Y Axis", numeric_cols, index=1)
 
-    fig = px.scatter(df, x=x_axis, y=y_axis)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(
+        px.scatter(df, x=x_axis, y=y_axis),
+        use_container_width=True
+    )
 
 # =============================================================================
-# PREDICTION PAGE
+# PREDICTION
 # =============================================================================
 elif page == "🎯 Make Prediction":
     st.title("🎯 Predict Employee Productivity")
-
-    st.info(f"🤖 Selected Model: **{selected_model_name}**")
+    st.info(f"🤖 Using Model: **{selected_model_name}**")
 
     if model is None or scaler is None or feature_names is None:
         st.error("Model not properly loaded.")
@@ -167,7 +190,7 @@ elif page == "🎯 Make Prediction":
                 prediction = model.predict(input_scaled)[0]
 
                 st.success(
-                    f"✅ **Predicted Productivity Score:** {prediction:.2f}"
+                    f"✅ Predicted Productivity Score: **{prediction:.2f}**"
                 )
 
             except Exception as e:
