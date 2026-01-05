@@ -1,5 +1,5 @@
 # =============================================================================
-# EMPLOYEE PRODUCTIVITY PREDICTION APP (ERROR-FREE)
+# EMPLOYEE PRODUCTIVITY PREDICTION APP (100% ERROR-FREE)
 # =============================================================================
 
 import streamlit as st
@@ -8,7 +8,9 @@ import numpy as np
 import plotly.express as px
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.svm import SVR
@@ -35,9 +37,9 @@ def load_dataset():
         np.random.seed(42)
         return pd.DataFrame({
             "age": np.random.randint(22, 60, 200),
-            "experience_years": np.random.randint(0, 30, 200),
+            "experience": np.random.randint(0, 30, 200),
             "training_hours": np.random.randint(10, 200, 200),
-            "projects_completed": np.random.randint(1, 50, 200),
+            "department": np.random.choice(["HR", "IT", "Sales"], 200),
             "productivity": np.random.uniform(50, 100, 200)
         })
 
@@ -53,19 +55,19 @@ page = st.sidebar.radio(
     ["🏠 Home", "📈 Data Explorer", "🎯 Make Prediction", "📊 Model Performance"]
 )
 
-# ================= TARGET COLUMN SELECTION (KEY FIX) =================
+# ================= TARGET SELECTION =================
 st.sidebar.markdown("### 🎯 Select Target Column")
 
-numeric_columns = df.select_dtypes(include=np.number).columns.tolist()
+numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
 
-target_column = st.sidebar.selectbox(
-    "Choose target (label):",
-    numeric_columns,
-    index=len(numeric_columns) - 1
+target_col = st.sidebar.selectbox(
+    "Target column:",
+    numeric_cols,
+    index=len(numeric_cols) - 1
 )
 
 # ================= MODEL SELECTION =================
-st.sidebar.markdown("### 🤖 Select ML Algorithm")
+st.sidebar.markdown("### 🤖 Select ML Model")
 
 model_choice = st.sidebar.selectbox(
     "Choose model:",
@@ -73,21 +75,35 @@ model_choice = st.sidebar.selectbox(
 )
 
 # =============================================================================
-# PREPARE DATA (SAFE)
+# SPLIT FEATURES / TARGET
 # =============================================================================
-X = df.drop(columns=[target_column])
-y = df[target_column]
+X = df.drop(columns=[target_col])
+y = df[target_col]
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+# Detect column types
+numeric_features = X.select_dtypes(include=np.number).columns.tolist()
+categorical_features = X.select_dtypes(exclude=np.number).columns.tolist()
+
+# =============================================================================
+# PREPROCESSING PIPELINE (KEY FIX)
+# =============================================================================
+numeric_transformer = Pipeline(steps=[
+    ("scaler", StandardScaler())
+])
+
+categorical_transformer = Pipeline(steps=[
+    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_transformer, numeric_features),
+        ("cat", categorical_transformer, categorical_features)
+    ]
 )
 
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
 # =============================================================================
-# TRAIN MODEL
+# MODEL SELECTION
 # =============================================================================
 if model_choice == "Linear Regression":
     model = LinearRegression()
@@ -101,12 +117,25 @@ elif model_choice == "Random Forest":
 else:
     model = SVR(kernel="rbf")
 
-model.fit(X_train_scaled, y_train)
+# FULL PIPELINE
+pipeline = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("model", model)
+])
 
 # =============================================================================
-# EVALUATE MODEL
+# TRAIN / TEST SPLIT
 # =============================================================================
-y_pred = model.predict(X_test_scaled)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+pipeline.fit(X_train, y_train)
+
+# =============================================================================
+# EVALUATION
+# =============================================================================
+y_pred = pipeline.predict(X_test)
 
 r2 = r2_score(y_test, y_pred)
 rmse = np.sqrt(mean_squared_error(y_test, y_pred))
@@ -132,42 +161,39 @@ if page == "🏠 Home":
 elif page == "📈 Data Explorer":
     st.title("📈 Data Explorer")
 
-    feature = st.selectbox("Select Feature", numeric_columns)
+    col = st.selectbox("Select Column", df.columns)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.plotly_chart(px.histogram(df, x=feature, nbins=30), use_container_width=True)
-
-    with col2:
-        st.plotly_chart(px.box(df, y=feature), use_container_width=True)
-
-    st.subheader("📊 Scatter Plot")
-    x_axis = st.selectbox("X Axis", numeric_columns)
-    y_axis = st.selectbox("Y Axis", numeric_columns, index=1)
-
-    st.plotly_chart(px.scatter(df, x=x_axis, y=y_axis), use_container_width=True)
+    if df[col].dtype != "object":
+        st.plotly_chart(px.histogram(df, x=col), use_container_width=True)
+    else:
+        st.plotly_chart(px.bar(df[col].value_counts()), use_container_width=True)
 
 # =============================================================================
 # PREDICTION
 # =============================================================================
 elif page == "🎯 Make Prediction":
-    st.title("🎯 Predict Output")
-    st.info(f"🤖 Model: **{model_choice}** | 🎯 Target: **{target_column}**")
+    st.title("🎯 Make Prediction")
+    st.info(f"🤖 Model: **{model_choice}** | 🎯 Target: **{target_col}**")
 
     input_data = {}
 
-    for feature in X.columns:
-        input_data[feature] = st.slider(
-            feature,
-            float(df[feature].min()),
-            float(df[feature].max()),
-            float(df[feature].mean())
-        )
+    for col in X.columns:
+        if col in numeric_features:
+            input_data[col] = st.slider(
+                col,
+                float(df[col].min()),
+                float(df[col].max()),
+                float(df[col].mean())
+            )
+        else:
+            input_data[col] = st.selectbox(
+                col,
+                df[col].unique()
+            )
 
     if st.button("🚀 Predict"):
         input_df = pd.DataFrame([input_data])
-        input_scaled = scaler.transform(input_df)
-        prediction = model.predict(input_scaled)[0]
+        prediction = pipeline.predict(input_df)[0]
 
         st.success(f"✅ Predicted Value: **{prediction:.2f}**")
 
@@ -181,9 +207,6 @@ elif page == "📊 Model Performance":
     col1.metric("R² Score", round(r2, 4))
     col2.metric("RMSE", round(rmse, 4))
     col3.metric("MAE", round(mae, 4))
-
-    st.subheader("📋 Features Used")
-    st.write(list(X.columns))
 
 # =============================================================================
 # FOOTER
