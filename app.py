@@ -1,5 +1,5 @@
 # =============================================================================
-# EMPLOYEE PRODUCTIVITY PREDICTION APP
+# EMPLOYEE PRODUCTIVITY PREDICTION APP (ERROR-FREE)
 # =============================================================================
 
 import streamlit as st
@@ -38,7 +38,7 @@ def load_dataset():
             "experience_years": np.random.randint(0, 30, 200),
             "training_hours": np.random.randint(10, 200, 200),
             "projects_completed": np.random.randint(1, 50, 200),
-            "productivity_score": np.random.uniform(50, 100, 200)
+            "productivity": np.random.uniform(50, 100, 200)
         })
 
 df = load_dataset()
@@ -53,17 +53,30 @@ page = st.sidebar.radio(
     ["🏠 Home", "📈 Data Explorer", "🎯 Make Prediction", "📊 Model Performance"]
 )
 
+# ================= TARGET COLUMN SELECTION (KEY FIX) =================
+st.sidebar.markdown("### 🎯 Select Target Column")
+
+numeric_columns = df.select_dtypes(include=np.number).columns.tolist()
+
+target_column = st.sidebar.selectbox(
+    "Choose target (label):",
+    numeric_columns,
+    index=len(numeric_columns) - 1
+)
+
+# ================= MODEL SELECTION =================
 st.sidebar.markdown("### 🤖 Select ML Algorithm")
+
 model_choice = st.sidebar.selectbox(
     "Choose model:",
     ["Linear Regression", "Random Forest", "Support Vector Machine"]
 )
 
 # =============================================================================
-# PREPARE DATA
+# PREPARE DATA (SAFE)
 # =============================================================================
-X = df.drop(columns=["productivity_score"])
-y = df["productivity_score"]
+X = df.drop(columns=[target_column])
+y = df[target_column]
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
@@ -74,7 +87,7 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
 # =============================================================================
-# TRAIN MODEL (BASED ON USER SELECTION)
+# TRAIN MODEL
 # =============================================================================
 if model_choice == "Linear Regression":
     model = LinearRegression()
@@ -85,7 +98,7 @@ elif model_choice == "Random Forest":
         random_state=42
     )
 
-elif model_choice == "Support Vector Machine":
+else:
     model = SVR(kernel="rbf")
 
 model.fit(X_train_scaled, y_train)
@@ -106,9 +119,9 @@ if page == "🏠 Home":
     st.title("🎯 Employee Productivity Prediction System")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Employees", len(df))
+    col1.metric("Rows", len(df))
     col2.metric("Features", X.shape[1])
-    col3.metric("Avg Productivity", round(y.mean(), 2))
+    col3.metric("Avg Target", round(y.mean(), 2))
 
     st.subheader("📋 Dataset Preview")
     st.dataframe(df.head(), use_container_width=True)
@@ -119,37 +132,27 @@ if page == "🏠 Home":
 elif page == "📈 Data Explorer":
     st.title("📈 Data Explorer")
 
-    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-    feature = st.selectbox("Select Feature", numeric_cols)
+    feature = st.selectbox("Select Feature", numeric_columns)
 
     col1, col2 = st.columns(2)
     with col1:
-        st.plotly_chart(
-            px.histogram(df, x=feature, nbins=30),
-            use_container_width=True
-        )
+        st.plotly_chart(px.histogram(df, x=feature, nbins=30), use_container_width=True)
 
     with col2:
-        st.plotly_chart(
-            px.box(df, y=feature),
-            use_container_width=True
-        )
+        st.plotly_chart(px.box(df, y=feature), use_container_width=True)
 
     st.subheader("📊 Scatter Plot")
-    x_axis = st.selectbox("X Axis", numeric_cols)
-    y_axis = st.selectbox("Y Axis", numeric_cols, index=1)
+    x_axis = st.selectbox("X Axis", numeric_columns)
+    y_axis = st.selectbox("Y Axis", numeric_columns, index=1)
 
-    st.plotly_chart(
-        px.scatter(df, x=x_axis, y=y_axis),
-        use_container_width=True
-    )
+    st.plotly_chart(px.scatter(df, x=x_axis, y=y_axis), use_container_width=True)
 
 # =============================================================================
 # PREDICTION
 # =============================================================================
 elif page == "🎯 Make Prediction":
-    st.title("🎯 Predict Employee Productivity")
-    st.info(f"🤖 Selected Model: **{model_choice}**")
+    st.title("🎯 Predict Output")
+    st.info(f"🤖 Model: **{model_choice}** | 🎯 Target: **{target_column}**")
 
     input_data = {}
 
@@ -166,9 +169,7 @@ elif page == "🎯 Make Prediction":
         input_scaled = scaler.transform(input_df)
         prediction = model.predict(input_scaled)[0]
 
-        st.success(
-            f"✅ Predicted Productivity Score: **{prediction:.2f}**"
-        )
+        st.success(f"✅ Predicted Value: **{prediction:.2f}**")
 
 # =============================================================================
 # MODEL PERFORMANCE
