@@ -1,14 +1,14 @@
-"""
-================================================================================
-EMPLOYEE PRODUCTIVITY PREDICTION APP
-================================================================================
-"""
+# =============================================================================
+# EMPLOYEE PRODUCTIVITY PREDICTION APP
+# Streamlit Course Project
+# =============================================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import joblib
+import os
 
 # =============================================================================
 # PAGE CONFIG
@@ -20,27 +20,36 @@ st.set_page_config(
 )
 
 # =============================================================================
-# LOAD MODEL FILES
+# AVAILABLE MODELS (ADD MORE IF YOU HAVE)
+# =============================================================================
+MODEL_FILES = {
+    "Linear Regression": "linear_model.pkl",
+    "Random Forest": "rf_model.pkl",
+    "Support Vector Machine": "svm_model.pkl"
+}
+
+SCALER_FILE = "scaler.pkl"
+METADATA_FILE = "model_metadata.pkl"
+
+# =============================================================================
+# LOAD MODEL SAFELY
 # =============================================================================
 @st.cache_resource
-def load_model_files():
+def load_model(model_path):
     try:
-        model = joblib.load("final_model.pkl")
-        scaler = joblib.load("scaler.pkl")
-        metadata = joblib.load("model_metadata.pkl")
+        model = joblib.load(model_path)
+        scaler = joblib.load(SCALER_FILE)
+        metadata = joblib.load(METADATA_FILE)
 
-        # Get feature names safely
-        if metadata and "features" in metadata:
+        if "features" in metadata:
             feature_names = metadata["features"]
-        elif hasattr(scaler, "feature_names_in_"):
-            feature_names = list(scaler.feature_names_in_)
         else:
             feature_names = None
 
         return model, scaler, feature_names, metadata
 
     except Exception as e:
-        st.error("❌ Model files could not be loaded")
+        st.error("❌ Failed to load model files")
         st.exception(e)
         return None, None, None, None
 
@@ -52,7 +61,7 @@ def load_dataset():
     try:
         return pd.read_csv("employee_productivity.csv")
     except:
-        st.warning("Dataset not found. Using sample data.")
+        st.warning("⚠ Dataset not found. Using sample data.")
         np.random.seed(42)
         return pd.DataFrame({
             "age": np.random.randint(22, 60, 100),
@@ -62,17 +71,27 @@ def load_dataset():
             "productivity_score": np.random.uniform(50, 100, 100)
         })
 
-model, scaler, feature_names, metadata = load_model_files()
 df = load_dataset()
 
 # =============================================================================
 # SIDEBAR
 # =============================================================================
 st.sidebar.title("📊 Navigation")
+
 page = st.sidebar.radio(
     "Go to:",
     ["🏠 Home", "📈 Data Explorer", "🎯 Make Prediction", "📊 Model Performance"]
 )
+
+# MODEL SELECTION
+st.sidebar.markdown("### 🤖 Select ML Model")
+selected_model_name = st.sidebar.selectbox(
+    "Choose model:",
+    list(MODEL_FILES.keys())
+)
+
+model_path = MODEL_FILES[selected_model_name]
+model, scaler, feature_names, metadata = load_model(model_path)
 
 # =============================================================================
 # HOME
@@ -83,11 +102,10 @@ if page == "🏠 Home":
     col1, col2, col3 = st.columns(3)
     col1.metric("Employees", len(df))
     col2.metric("Features", len(feature_names) if feature_names else "N/A")
-
-    if "productivity_score" in df.columns:
-        col3.metric("Avg Productivity", round(df["productivity_score"].mean(), 2))
-    else:
-        col3.metric("Avg Target", "N/A")
+    col3.metric(
+        "Avg Productivity",
+        round(df.select_dtypes(np.number).iloc[:, -1].mean(), 2)
+    )
 
     st.subheader("📋 Dataset Preview")
     st.dataframe(df.head(), use_container_width=True)
@@ -100,58 +118,60 @@ elif page == "📈 Data Explorer":
 
     numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
 
-    if numeric_cols:
-        selected_col = st.selectbox("Select Feature", numeric_cols)
+    feature = st.selectbox("Select Feature", numeric_cols)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(px.histogram(df, x=selected_col), use_container_width=True)
-        with col2:
-            st.plotly_chart(px.box(df, y=selected_col), use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        fig = px.histogram(df, x=feature, nbins=30, title="Histogram")
+        st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("📊 Scatter Plot")
-        x_axis = st.selectbox("X Axis", numeric_cols)
-        y_axis = st.selectbox("Y Axis", numeric_cols, index=1)
+    with col2:
+        fig = px.box(df, y=feature, title="Box Plot")
+        st.plotly_chart(fig, use_container_width=True)
 
-        st.plotly_chart(px.scatter(df, x=x_axis, y=y_axis), use_container_width=True)
+    st.subheader("📊 Scatter Plot")
+    x_axis = st.selectbox("X Axis", numeric_cols)
+    y_axis = st.selectbox("Y Axis", numeric_cols, index=1)
+
+    fig = px.scatter(df, x=x_axis, y=y_axis)
+    st.plotly_chart(fig, use_container_width=True)
 
 # =============================================================================
-# PREDICTION
+# PREDICTION PAGE
 # =============================================================================
 elif page == "🎯 Make Prediction":
-    st.title("🎯 Predict Productivity")
+    st.title("🎯 Predict Employee Productivity")
+
+    st.info(f"🤖 Selected Model: **{selected_model_name}**")
 
     if model is None or scaler is None or feature_names is None:
-        st.error("⚠️ Model not ready. Check model files.")
+        st.error("Model not properly loaded.")
     else:
         input_data = {}
 
         for feature in feature_names:
-            if feature in df.columns and pd.api.types.is_numeric_dtype(df[feature]):
-                col_data = df[feature].dropna()
-
-                if not col_data.empty:
-                    input_data[feature] = st.slider(
-                        feature,
-                        float(col_data.min()),
-                        float(col_data.max()),
-                        float(col_data.mean())
-                    )
-                else:
-                    input_data[feature] = st.number_input(feature, value=0.0)
+            if feature in df.columns:
+                input_data[feature] = st.slider(
+                    feature,
+                    float(df[feature].min()),
+                    float(df[feature].max()),
+                    float(df[feature].mean())
+                )
             else:
                 input_data[feature] = st.number_input(feature, value=0.0)
 
-        if st.button("🚀 Predict Productivity"):
+        if st.button("🚀 Predict"):
             try:
                 input_df = pd.DataFrame([input_data])
                 input_scaled = scaler.transform(input_df)
                 prediction = model.predict(input_scaled)[0]
 
-                st.success(f"✅ Predicted Productivity Score: **{prediction:.2f}**")
+                st.success(
+                    f"✅ **Predicted Productivity Score:** {prediction:.2f}"
+                )
 
             except Exception as e:
-                st.error("❌ Prediction failed")
+                st.error("Prediction failed")
                 st.exception(e)
 
 # =============================================================================
