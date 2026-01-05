@@ -6,8 +6,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import joblib
-import os
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
 # =============================================================================
 # PAGE CONFIG
@@ -17,54 +22,6 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
-
-# =============================================================================
-# DETECT AVAILABLE MODELS SAFELY
-# =============================================================================
-@st.cache_resource
-def get_available_models():
-    models = {}
-
-    if os.path.exists("linear_model.pkl"):
-        models["Linear Regression"] = "linear_model.pkl"
-
-    if os.path.exists("rf_model.pkl"):
-        models["Random Forest"] = "rf_model.pkl"
-
-    if os.path.exists("svm_model.pkl"):
-        models["Support Vector Machine"] = "svm_model.pkl"
-
-    if os.path.exists("final_model.pkl"):
-        models["Final Trained Model"] = "final_model.pkl"
-
-    return models
-
-MODEL_FILES = get_available_models()
-
-# =============================================================================
-# LOAD MODEL FILES
-# =============================================================================
-@st.cache_resource
-def load_model(model_path):
-    try:
-        model = joblib.load(model_path)
-        scaler = joblib.load("scaler.pkl")
-        metadata = joblib.load("model_metadata.pkl")
-
-        # feature names
-        if metadata and "features" in metadata:
-            feature_names = metadata["features"]
-        elif hasattr(scaler, "feature_names_in_"):
-            feature_names = list(scaler.feature_names_in_)
-        else:
-            feature_names = None
-
-        return model, scaler, feature_names, metadata
-
-    except Exception as e:
-        st.error("❌ Model files could not be loaded")
-        st.exception(e)
-        return None, None, None, None
 
 # =============================================================================
 # LOAD DATASET
@@ -77,11 +34,11 @@ def load_dataset():
         st.warning("⚠ Dataset not found. Using sample data.")
         np.random.seed(42)
         return pd.DataFrame({
-            "age": np.random.randint(22, 60, 100),
-            "experience_years": np.random.randint(0, 30, 100),
-            "training_hours": np.random.randint(10, 200, 100),
-            "projects_completed": np.random.randint(1, 50, 100),
-            "productivity_score": np.random.uniform(50, 100, 100)
+            "age": np.random.randint(22, 60, 200),
+            "experience_years": np.random.randint(0, 30, 200),
+            "training_hours": np.random.randint(10, 200, 200),
+            "projects_completed": np.random.randint(1, 50, 200),
+            "productivity_score": np.random.uniform(50, 100, 200)
         })
 
 df = load_dataset()
@@ -96,21 +53,51 @@ page = st.sidebar.radio(
     ["🏠 Home", "📈 Data Explorer", "🎯 Make Prediction", "📊 Model Performance"]
 )
 
-# MODEL SELECTION
-st.sidebar.markdown("### 🤖 Select ML Model")
-
-if len(MODEL_FILES) == 0:
-    st.sidebar.error("❌ No model files found")
-    st.stop()
-
-selected_model_name = st.sidebar.selectbox(
+st.sidebar.markdown("### 🤖 Select ML Algorithm")
+model_choice = st.sidebar.selectbox(
     "Choose model:",
-    list(MODEL_FILES.keys())
+    ["Linear Regression", "Random Forest", "Support Vector Machine"]
 )
 
-model, scaler, feature_names, metadata = load_model(
-    MODEL_FILES[selected_model_name]
+# =============================================================================
+# PREPARE DATA
+# =============================================================================
+X = df.drop(columns=["productivity_score"])
+y = df["productivity_score"]
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
 )
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# =============================================================================
+# TRAIN MODEL (BASED ON USER SELECTION)
+# =============================================================================
+if model_choice == "Linear Regression":
+    model = LinearRegression()
+
+elif model_choice == "Random Forest":
+    model = RandomForestRegressor(
+        n_estimators=100,
+        random_state=42
+    )
+
+elif model_choice == "Support Vector Machine":
+    model = SVR(kernel="rbf")
+
+model.fit(X_train_scaled, y_train)
+
+# =============================================================================
+# EVALUATE MODEL
+# =============================================================================
+y_pred = model.predict(X_test_scaled)
+
+r2 = r2_score(y_test, y_pred)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+mae = mean_absolute_error(y_test, y_pred)
 
 # =============================================================================
 # HOME
@@ -120,11 +107,8 @@ if page == "🏠 Home":
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Employees", len(df))
-    col2.metric("Features", len(feature_names) if feature_names else "N/A")
-    col3.metric(
-        "Avg Productivity",
-        round(df.select_dtypes(np.number).iloc[:, -1].mean(), 2)
-    )
+    col2.metric("Features", X.shape[1])
+    col3.metric("Avg Productivity", round(y.mean(), 2))
 
     st.subheader("📋 Dataset Preview")
     st.dataframe(df.head(), use_container_width=True)
@@ -165,37 +149,26 @@ elif page == "📈 Data Explorer":
 # =============================================================================
 elif page == "🎯 Make Prediction":
     st.title("🎯 Predict Employee Productivity")
-    st.info(f"🤖 Using Model: **{selected_model_name}**")
+    st.info(f"🤖 Selected Model: **{model_choice}**")
 
-    if model is None or scaler is None or feature_names is None:
-        st.error("Model not properly loaded.")
-    else:
-        input_data = {}
+    input_data = {}
 
-        for feature in feature_names:
-            if feature in df.columns:
-                input_data[feature] = st.slider(
-                    feature,
-                    float(df[feature].min()),
-                    float(df[feature].max()),
-                    float(df[feature].mean())
-                )
-            else:
-                input_data[feature] = st.number_input(feature, value=0.0)
+    for feature in X.columns:
+        input_data[feature] = st.slider(
+            feature,
+            float(df[feature].min()),
+            float(df[feature].max()),
+            float(df[feature].mean())
+        )
 
-        if st.button("🚀 Predict"):
-            try:
-                input_df = pd.DataFrame([input_data])
-                input_scaled = scaler.transform(input_df)
-                prediction = model.predict(input_scaled)[0]
+    if st.button("🚀 Predict"):
+        input_df = pd.DataFrame([input_data])
+        input_scaled = scaler.transform(input_df)
+        prediction = model.predict(input_scaled)[0]
 
-                st.success(
-                    f"✅ Predicted Productivity Score: **{prediction:.2f}**"
-                )
-
-            except Exception as e:
-                st.error("Prediction failed")
-                st.exception(e)
+        st.success(
+            f"✅ Predicted Productivity Score: **{prediction:.2f}**"
+        )
 
 # =============================================================================
 # MODEL PERFORMANCE
@@ -203,16 +176,13 @@ elif page == "🎯 Make Prediction":
 elif page == "📊 Model Performance":
     st.title("📊 Model Performance")
 
-    if metadata:
-        col1, col2, col3 = st.columns(3)
-        col1.metric("R² Score", round(metadata.get("r2_score", 0), 4))
-        col2.metric("RMSE", round(metadata.get("rmse", 0), 4))
-        col3.metric("MAE", round(metadata.get("mae", 0), 4))
+    col1, col2, col3 = st.columns(3)
+    col1.metric("R² Score", round(r2, 4))
+    col2.metric("RMSE", round(rmse, 4))
+    col3.metric("MAE", round(mae, 4))
 
-        st.subheader("📋 Features Used")
-        st.write(metadata.get("features", []))
-    else:
-        st.error("Metadata not available")
+    st.subheader("📋 Features Used")
+    st.write(list(X.columns))
 
 # =============================================================================
 # FOOTER
